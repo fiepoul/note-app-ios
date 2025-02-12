@@ -1,74 +1,163 @@
-import { Image, StyleSheet, Platform } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { 
+  View, TextInput, Text, FlatList, StyleSheet, Platform, KeyboardAvoidingView, TouchableOpacity, Animated 
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFonts, PlayfairDisplay_400Regular } from '@expo-google-fonts/playfair-display';
+import AppLoading from 'expo-app-loading';
 
-import { HelloWave } from '@/components/HelloWave';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
+const NotesScreen = () => {
+  const [note, setNote] = useState('');
+  const [notes, setNotes] = useState<string[]>([]);
+  const fadeAnim = new Animated.Value(0);
+  const titleColor = new Animated.Value(0);
 
-export default function HomeScreen() {
+  let [fontsLoaded] = useFonts({
+    PlayfairDisplay: PlayfairDisplay_400Regular,
+  });
+
+  useEffect(() => {
+    loadNotes();
+    animateTitle();
+  }, []);
+
+  const animateTitle = () => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(titleColor, { toValue: 1, duration: 800, useNativeDriver: false }),
+        Animated.timing(titleColor, { toValue: 0, duration: 800, useNativeDriver: false })
+      ])
+    ).start();
+  };
+
+  const addNote = async () => {
+    if (!note.trim()) return;
+    const updatedNotes = [...notes, note];
+    setNotes(updatedNotes);
+    setNote('');
+    await AsyncStorage.setItem('notes', JSON.stringify(updatedNotes));
+  };
+
+  const loadNotes = async () => {
+    try {
+      const savedNotes = await AsyncStorage.getItem('notes');
+      setNotes(savedNotes ? JSON.parse(savedNotes) : []);
+    } catch (error) {
+      console.error('Error loading notes:', error);
+    }
+  };
+
+  if (!fontsLoaded) {
+    return <AppLoading />;
+  }
+
+  const titleInterpolation = titleColor.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['#FF006E', '#3A86FF'] // Skift farve fra pink til elektrisk blå
+  });
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12'
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-        <ThemedText>
-          Tap the Explore tab to learn more about what's included in this starter app.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          When you're ready, run{' '}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+      style={styles.container}
+    >
+      <Animated.Text style={[styles.title, { color: titleInterpolation }]}>
+        NOTES
+      </Animated.Text>
+      
+      <TextInput
+        style={styles.input}
+        placeholder="Drop a thought..."
+        placeholderTextColor="#222"
+        value={note}
+        onChangeText={setNote}
+      />
+
+      <TouchableOpacity style={styles.button} onPress={addNote}>
+        <Text style={styles.buttonText}>BLAST IT</Text>
+      </TouchableOpacity>
+
+      <FlatList
+        data={notes}
+        keyExtractor={(item, index) => index.toString()}
+        renderItem={({ item, index }) => (
+          <View style={[
+            styles.noteCard, 
+            { 
+              backgroundColor: noteColors[index % noteColors.length], 
+              transform: [{ rotate: `${Math.random() * 10 - 5}deg` }], 
+              padding: Math.random() > 0.5 ? 15 : 25 // Variation i note-størrelse
+            }
+          ]}>
+            <Text style={styles.noteText}>{item}</Text>
+          </View>
+        )}
+      />
+    </KeyboardAvoidingView>
   );
-}
+};
+
+const noteColors = ['#FF006E', '#FB5607', '#FFBE0B', '#8338EC', '#3A86FF'];
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
+  container: {
+    flex: 1,
+    padding: 20,
+    backgroundColor: '#FDE74C', // Sagmeister gul baggrund
     alignItems: 'center',
-    gap: 8,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  title: {
+    fontSize: 72,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 30,
+    fontFamily: 'PlayfairDisplay',
+    textTransform: 'uppercase',
+    letterSpacing: -2, // Kompakt typografi
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  input: {
+    borderWidth: 2,
+    borderColor: '#000',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 50,
+    padding: 20,
+    fontSize: 22,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    width: '90%',
+    marginBottom: 20, // Mere luft mellem input og knap
+  },
+  button: {
+    backgroundColor: '#3A86FF', // Elektrisk blå knap
+    paddingVertical: 16,
+    paddingHorizontal: 30,
+    borderRadius: 50,
+    alignItems: 'center',
+    marginBottom: 30,
+  },
+  buttonText: {
+    color: '#FFF',
+    fontSize: 20,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+  },
+  noteCard: {
+    borderRadius: 20,
+    marginVertical: 8,
+    width: '80%', // Giver notes mere variation
+    alignSelf: 'center',
+  },
+  noteText: {
+    fontSize: 20,
+    color: '#000',
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
 });
+
+export default NotesScreen;
+
+
+
+
+
