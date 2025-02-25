@@ -10,17 +10,36 @@ import {
   TouchableOpacity,
   Animated,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { MaterialIcons } from "@expo/vector-icons";
 import {
   useFonts,
   PlayfairDisplay_400Regular,
 } from "@expo-google-fonts/playfair-display";
 import AppLoading from "expo-app-loading";
 import { IndieFlower_400Regular } from "@expo-google-fonts/indie-flower";
+import {
+  collection,
+  addDoc,
+  getDocs,
+  deleteDoc,
+  doc,
+  updateDoc,
+} from "firebase/firestore";
+import { app, db } from "../../firebaseConfig";
+
+const noteColors = ["#FF006E", "#FB5607", "#FFBE0B", "#8338EC", "#3A86FF"];
+
+type NoteType = {
+  id: string;
+  text: string;
+};
 
 const NotesScreen = () => {
   const [note, setNote] = useState("");
-  const [notes, setNotes] = useState<string[]>([]);
+  const [notes, setNotes] = useState<NoteType[]>([]);
+  const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editedText, setEditedText] = useState<string>("");
   const fadeAnim = new Animated.Value(0);
   const titleColor = new Animated.Value(0);
 
@@ -53,25 +72,48 @@ const NotesScreen = () => {
 
   const addNote = async () => {
     if (!note.trim()) return;
-    const updatedNotes = [...notes, note];
-    setNotes(updatedNotes);
-    setNote("");
-    await AsyncStorage.setItem("notes", JSON.stringify(updatedNotes));
+    try {
+      const newNoteRef = await addDoc(collection(db, "notes"), { text: note });
+      setNotes((prevNotes) => [...prevNotes, { id: newNoteRef.id, text: note }]);
+      setNote("");
+    } catch (error) {
+      console.error("Error adding note:", error);
+    }
   };
 
-  const clearNotes = async () => {
+  const deleteNote = async (id: string) => {
     try {
-      await AsyncStorage.removeItem("notes");
-      setNotes([]);
+      await deleteDoc(doc(db, "notes", id));
+      setNotes((prevNotes) => prevNotes.filter((note) => note.id !== id));
+      setExpandedNoteId(null);
     } catch (error) {
-      console.error("Error clearing notes:", error);
+      console.error("Error deleting note:", error);
+    }
+  };
+
+  const saveEditedNote = async (id: string) => {
+    try {
+      await updateDoc(doc(db, "notes", id), { text: editedText });
+      setNotes((prevNotes) =>
+        prevNotes.map((note) =>
+          note.id === id ? { ...note, text: editedText } : note
+        )
+      );
+      setEditingNoteId(null);
+      setEditedText("");
+    } catch (error) {
+      console.error("Error saving edited note:", error);
     }
   };
 
   const loadNotes = async () => {
     try {
-      const savedNotes = await AsyncStorage.getItem("notes");
-      setNotes(savedNotes ? JSON.parse(savedNotes) : []);
+      const querySnapshot = await getDocs(collection(db, "notes"));
+      const notesList: NoteType[] = querySnapshot.docs.map((docItem) => ({
+        id: docItem.id,
+        text: docItem.data().text,
+      }));
+      setNotes(notesList);
     } catch (error) {
       console.error("Error loading notes:", error);
     }
@@ -91,9 +133,7 @@ const NotesScreen = () => {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={styles.container}
     >
-      <Animated.Text style={[styles.title, { color: titleInterpolation }]}>
-        NOTES
-      </Animated.Text>
+      <Animated.Text style={[styles.title, { color: titleInterpolation }]}>NOTES</Animated.Text>
 
       <TextInput
         style={styles.input}
@@ -101,24 +141,19 @@ const NotesScreen = () => {
         placeholderTextColor="#222"
         value={note}
         onChangeText={setNote}
+        multiline
+        textAlignVertical="top"
       />
 
       <View style={styles.buttonContainer}>
         <TouchableOpacity style={styles.button} onPress={addNote}>
           <Text style={styles.buttonText}>BLAST IT</Text>
         </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.button, { backgroundColor: "#8338EC" }]}
-          onPress={clearNotes}
-        >
-          <Text style={styles.buttonText}>CLEAR ALL</Text>
-        </TouchableOpacity>
       </View>
 
       <FlatList
         data={notes}
-        keyExtractor={(item, index) => index.toString()}
+        keyExtractor={(item) => item.id}
         renderItem={({ item, index }) => (
           <View
             style={[
@@ -126,20 +161,67 @@ const NotesScreen = () => {
               {
                 backgroundColor: noteColors[index % noteColors.length],
                 transform: [{ rotate: `${Math.random() * 10 - 5}deg` }],
-                padding: Math.random() > 0.5 ? 5 : 5,
-                marginTop: index === 0 ? 20 : 0,
+                minHeight: expandedNoteId === item.id ? null : 100,
+                marginTop: index === 0 ? 30 : 10,
               },
             ]}
           >
-            <Text style={styles.noteText}>{item}</Text>
+            {editingNoteId === item.id ? (
+              <>
+                <TextInput
+                  style={styles.editInput}
+                  value={editedText}
+                  onChangeText={setEditedText}
+                  multiline
+                  textAlignVertical="top"
+                />
+              </>
+            ) : (
+              <TouchableOpacity
+                style={{ flex: 1, justifyContent: "center" }}
+                onPress={() =>
+                  setExpandedNoteId(expandedNoteId === item.id ? null : item.id)
+                }
+              >
+                <Text
+                  style={styles.expandedNoteText}
+                  numberOfLines={expandedNoteId === item.id ? undefined : 1}
+                >
+                  {expandedNoteId === item.id
+                    ? item.text
+                    : item.text?.length > 50
+                    ? `${item.text.substring(0, 50)}...`
+                    : item.text}
+                </Text>
+              </TouchableOpacity>
+            )}
+            <View style={styles.actionButtons}>
+              <TouchableOpacity
+                onPress={() => {
+                  setEditingNoteId(item.id);
+                  setEditedText(item.text);
+                }}
+              >
+                <MaterialIcons name="edit" size={16} color="#000" />
+              </TouchableOpacity>
+              {editingNoteId === item.id && (
+                <TouchableOpacity
+                  onPress={() => saveEditedNote(item.id)}
+                  style={styles.saveIcon}
+                >
+                  <MaterialIcons name="save" size={16} color="#000" />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity onPress={() => deleteNote(item.id)}>
+                <MaterialIcons name="delete" size={16} color="#000" />
+              </TouchableOpacity>
+            </View>
           </View>
         )}
       />
     </KeyboardAvoidingView>
   );
 };
-
-const noteColors = ["#FF006E", "#FB5607", "#FFBE0B", "#8338EC", "#3A86FF"];
 
 const styles = StyleSheet.create({
   container: {
@@ -161,13 +243,15 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#000",
     backgroundColor: "#FFFFFF",
-    borderRadius: 50,
+    borderRadius: 5,
     padding: 20,
-    fontSize: 22,
-    fontWeight: "bold",
-    textAlign: "center",
+    fontSize: 16,
+    fontFamily: "IndieFlower",
+    textAlign: "left",
     width: "90%",
+    minHeight: 100,
     marginBottom: 20,
+    textAlignVertical: "top",
   },
   buttonContainer: {
     flexDirection: "row",
@@ -179,7 +263,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#3A86FF",
     paddingVertical: 16,
     paddingHorizontal: 30,
-    borderRadius: 50,
+    borderRadius: 5,
     alignItems: "center",
     marginBottom: 10,
     flex: 1,
@@ -192,17 +276,40 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   noteCard: {
-    borderRadius: 20,
-    marginVertical: 2,
-    width: "80%",
+    borderRadius: 0,
+    marginVertical: 10,
+    width: "90%",
     alignSelf: "center",
+    padding: 15,
+    justifyContent: "center",
   },
-  noteText: {
+  expandedNoteText: {
     fontSize: 18,
     fontFamily: "IndieFlower",
     color: "#000",
     fontWeight: "bold",
-    textAlign: "center",
+    textAlign: "left",
+  },
+  editInput: {
+    borderWidth: 1,
+    borderColor: "#000",
+    backgroundColor: "#FFF",
+    borderRadius: 5,
+    padding: 10,
+    fontSize: 16,
+    fontFamily: "IndieFlower",
+    minHeight: 100,
+    textAlignVertical: "top",
+  },
+  saveIcon: {
+    marginLeft: 5,
+  },
+  actionButtons: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginTop: 10,
+    alignItems: "center",
+    gap: 5,
   },
 });
 
