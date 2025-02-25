@@ -11,10 +11,7 @@ import {
   Animated,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
-import {
-  useFonts,
-  PlayfairDisplay_400Regular,
-} from "@expo-google-fonts/playfair-display";
+import { useFonts, PlayfairDisplay_400Regular } from "@expo-google-fonts/playfair-display";
 import AppLoading from "expo-app-loading";
 import { IndieFlower_400Regular } from "@expo-google-fonts/indie-flower";
 import {
@@ -26,6 +23,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { app, db } from "../../firebaseConfig";
+import { Easing } from "react-native-reanimated";
 
 const noteColors = ["#FF006E", "#FB5607", "#FFBE0B", "#8338EC", "#3A86FF"];
 
@@ -40,8 +38,8 @@ const NotesScreen = () => {
   const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editedText, setEditedText] = useState<string>("");
-  const fadeAnim = new Animated.Value(0);
   const titleColor = new Animated.Value(0);
+  const flowerAnim = new Animated.Value(0);
 
   let [fontsLoaded] = useFonts({
     PlayfairDisplay: PlayfairDisplay_400Regular,
@@ -51,6 +49,7 @@ const NotesScreen = () => {
   useEffect(() => {
     loadNotes();
     animateTitle();
+    animateFlower();
   }, []);
 
   const animateTitle = () => {
@@ -67,6 +66,17 @@ const NotesScreen = () => {
           useNativeDriver: false,
         }),
       ])
+    ).start();
+  };
+
+  const animateFlower = () => {
+    Animated.loop(
+      Animated.timing(flowerAnim, {
+        toValue: 1,
+        duration: 3000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
     ).start();
   };
 
@@ -123,9 +133,9 @@ const NotesScreen = () => {
     return <AppLoading />;
   }
 
-  const titleInterpolation = titleColor.interpolate({
+  const flowerSpin = flowerAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ["#FF006E", "#3A86FF"],
+    outputRange: ["0deg", "360deg"],
   });
 
   return (
@@ -133,7 +143,19 @@ const NotesScreen = () => {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={styles.container}
     >
-      <Animated.Text style={[styles.title, { color: titleInterpolation }]}>NOTES</Animated.Text>
+      <Animated.Text
+        style={[
+          styles.title,
+          {
+            color: titleColor.interpolate({
+              inputRange: [0, 1],
+              outputRange: ["#FF006E", "#3A86FF"],
+            }),
+          },
+        ]}
+      >
+        NOTES
+      </Animated.Text>
 
       <TextInput
         style={styles.input}
@@ -147,53 +169,62 @@ const NotesScreen = () => {
 
       <View style={styles.buttonContainer}>
         <TouchableOpacity style={styles.button} onPress={addNote}>
-          <Text style={styles.buttonText}>BLAST IT</Text>
+          <Text style={styles.buttonText}>BLAST IT!!!!!!</Text>
         </TouchableOpacity>
       </View>
 
       <FlatList
         data={notes}
+        numColumns={2}
         keyExtractor={(item) => item.id}
+        columnWrapperStyle={styles.columnWrapper}
         renderItem={({ item, index }) => (
-          <View
-            style={[
-              styles.noteCard,
-              {
-                backgroundColor: noteColors[index % noteColors.length],
-                transform: [{ rotate: `${Math.random() * 10 - 5}deg` }],
-                minHeight: expandedNoteId === item.id ? null : 100,
-                marginTop: index === 0 ? 30 : 10,
-              },
-            ]}
+          <TouchableOpacity
+            style={
+              expandedNoteId === item.id
+                ? [
+                    styles.expandedNoteCard,
+                    {
+                      backgroundColor:
+                        noteColors[index % noteColors.length],
+                    },
+                  ]
+                : [
+                    styles.noteCard,
+                    {
+                      backgroundColor:
+                        noteColors[index % noteColors.length],
+                      transform: [
+                        { rotate: `${Math.random() * 10 - 5}deg` },
+                        { translateY: Math.random() * 10 - 5 },
+                        { translateX: Math.random() * 10 - 5 },
+                      ],
+                    },
+                  ]
+            }
+            onPress={() =>
+              setExpandedNoteId(expandedNoteId === item.id ? null : item.id)
+            }
           >
             {editingNoteId === item.id ? (
-              <>
-                <TextInput
-                  style={styles.editInput}
-                  value={editedText}
-                  onChangeText={setEditedText}
-                  multiline
-                  textAlignVertical="top"
-                />
-              </>
+              <TextInput
+                style={styles.editInput}
+                value={editedText}
+                onChangeText={setEditedText}
+                multiline
+                textAlignVertical="top"
+              />
             ) : (
-              <TouchableOpacity
-                style={{ flex: 1, justifyContent: "center" }}
-                onPress={() =>
-                  setExpandedNoteId(expandedNoteId === item.id ? null : item.id)
-                }
+              <Text
+                style={styles.expandedNoteText}
+                numberOfLines={expandedNoteId === item.id ? undefined : 1}
               >
-                <Text
-                  style={styles.expandedNoteText}
-                  numberOfLines={expandedNoteId === item.id ? undefined : 1}
-                >
-                  {expandedNoteId === item.id
-                    ? item.text
-                    : item.text?.length > 50
-                    ? `${item.text.substring(0, 50)}...`
-                    : item.text}
-                </Text>
-              </TouchableOpacity>
+                {expandedNoteId === item.id
+                  ? item.text
+                  : item.text?.length > 20
+                  ? `${item.text.substring(0, 20)}...`
+                  : item.text}
+              </Text>
             )}
             <View style={styles.actionButtons}>
               <TouchableOpacity
@@ -216,7 +247,7 @@ const NotesScreen = () => {
                 <MaterialIcons name="delete" size={16} color="#000" />
               </TouchableOpacity>
             </View>
-          </View>
+          </TouchableOpacity>
         )}
       />
     </KeyboardAvoidingView>
@@ -255,7 +286,7 @@ const styles = StyleSheet.create({
   },
   buttonContainer: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "center",
     width: "90%",
     marginBottom: 10,
   },
@@ -263,25 +294,37 @@ const styles = StyleSheet.create({
     backgroundColor: "#3A86FF",
     paddingVertical: 16,
     paddingHorizontal: 30,
-    borderRadius: 5,
+    borderRadius: 10,
     alignItems: "center",
-    marginBottom: 10,
-    flex: 1,
-    marginHorizontal: 5,
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4.65,
+    elevation: 8,
   },
   buttonText: {
     color: "#FFF",
-    fontSize: 10,
+    fontSize: 14,
     fontWeight: "bold",
     textTransform: "uppercase",
   },
   noteCard: {
     borderRadius: 0,
     marginVertical: 10,
-    width: "90%",
-    alignSelf: "center",
+    width: "48%",
     padding: 15,
     justifyContent: "center",
+  },
+  expandedNoteCard: {
+    borderRadius: 0,
+    marginVertical: 10,
+    width: "100%",
+    padding: 20,
+    justifyContent: "center",
+  },
+  columnWrapper: {
+    justifyContent: "space-between",
   },
   expandedNoteText: {
     fontSize: 18,
@@ -314,3 +357,4 @@ const styles = StyleSheet.create({
 });
 
 export default NotesScreen;
+
